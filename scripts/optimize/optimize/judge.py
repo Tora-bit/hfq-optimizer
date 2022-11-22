@@ -7,6 +7,34 @@ import matplotlib.pyplot as plt
 from .graph import sim_plot
 from transitions import Machine
 
+def comfirm_pre_switch(config : Config, data : pd.DataFrame, plot = False) -> bool:
+
+    p2 = math.pi * 2
+
+    if not config.phase_ele == []:
+        new_df = pd.DataFrame()
+        for squid in config.phase_ele:
+            if len(squid) == 1:
+                new_df['P('+'+'.join(squid)+')'] = data['P('+squid[0].upper()+')']
+            elif len(squid) == 2:
+                new_df['P('+'+'.join(squid)+')'] = data['P('+squid[0].upper()+')'] + data['P('+squid[1].upper()+')']
+            elif len(squid) == 3:
+                new_df['P('+'+'.join(squid)+')'] = data['P('+squid[0].upper()+')'] + data['P('+squid[1].upper()+')'] + data['P('+squid[2].upper()+')']
+    
+        for srs in new_df.items():
+            
+            # バイアスをかけている時の位相(前初期位相)
+            pre_init_phase = srs[( srs.index > config.pre_start_time ) & ( srs.index < config.pre_end_time )].mean()
+            
+            # バイアスをかけた時の状態の位相(初期位相)
+            init_phase = srs[( srs.index > config.start_time ) & ( srs.index < config.end_time )].mean()
+            
+            if (init_phase-pre_init_phase)>(2.0/3.0)*p2:
+                return False
+            else:
+                return True
+
+
 def get_switch_timing(config : Config, data : pd.DataFrame, plot = False) -> pd.DataFrame:
 
     p = math.pi
@@ -28,11 +56,19 @@ def get_switch_timing(config : Config, data : pd.DataFrame, plot = False) -> pd.
             sim_plot(new_df)
 
         for column_name, srs in new_df.items():
+            """
+            # バイアスをかけている時の位相(前初期位相)
+            pre_init_phase = srs[( srs.index > config.pre_start_time ) & ( srs.index < config.pre_end_time )].mean()
+            """
             # バイアスをかけた時の状態の位相(初期位相)
             init_phase = srs[( srs.index > config.start_time ) & ( srs.index < config.end_time )].mean()
             
             judge_phase = init_phase + p
-            
+
+            """
+            # クロックが入る前のものを抽出
+            pre_srs=srs[srs.index < config.end_time]
+            """
             # クロックが入ってからのものを抽出
             srs = srs[srs.index > config.end_time]
 
@@ -170,7 +206,6 @@ def state_judgement(dl1 : list, config : Config) -> bool:
                 return False
             if (input_time+output_interval)<earlest_sw_t or empty_flag:
                 #削除しない
-                #print('f')
                 return True
             
 
@@ -241,9 +276,3 @@ def state_judgement(dl1 : list, config : Config) -> bool:
             break
     #全てクリアならTrue終了
     return True
-
-
-
-    
-
-

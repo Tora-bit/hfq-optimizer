@@ -3,7 +3,7 @@ import re
 import pandas as pd
 from .util import stringToNum, isfloat, isint, vaild_number
 from .pyjosim import simulation
-from .judge import get_switch_timing, compare_switch_timings, state_judgement
+from .judge import comfirm_pre_switch, get_switch_timing, compare_switch_timings, state_judgement
 from .config import Config
 from .calculator import shunt_calc, rand_norm
 from .graph import margin_plot, sim_plot
@@ -180,6 +180,8 @@ class Data:
         return df
 
     def __operation_judge(self, parameters : pd.Series):
+        #if not comfirm_pre_switch(self.conf, self.__data_sim(parameters)):
+        #    return False
         res = get_switch_timing(self.conf, self.__data_sim(parameters))
         if self.conf.state_judge==False:
             return compare_switch_timings(res, self.base_switch_timing, self.conf)
@@ -355,7 +357,7 @@ class Data:
                 for i in range(10):
                     print(str(k)+":"+str(j)+":"+str(i)+"の最適化")
                     # マージンの計算
-                    margins = self.get_margins(param=self.vdf['sub'])
+                    margins = self.get_margins(param=self.vdf['sub'],plot=False)
 
                     min_margin = 100
                     
@@ -430,7 +432,7 @@ class Data:
 
                 # 保存する
                 print("保存")
-                self.__plot(margins_for_plot, directory+"/"+str(k)+"-x.png")
+                # self.__plot(margins_for_plot, directory+"/"+str(k)+"-x.png")
                 main_parameters.to_csv(directory+"/"+str(k)+"-main.csv")
                 with open(directory+"/"+str(k)+"-netlist.txt","w") as f:
                     copied_sim_data = self.sim_data
