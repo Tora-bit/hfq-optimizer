@@ -76,3 +76,11 @@ def nominal_ic(L, Ic, strout = False):
         return SIstr(result) + "A"
     else:
         return result
+
+def nominal_ic_check(L, Ic, strout = False):
+    x = (L * Ic) / (2.068*10**(-15))
+    result = (2.8009*x**6 -9.4513*x**5 + 11.697*x**4 - 5.2501*x**3 - 1.7062*x**2 + 3.3052*x)*Ic
+    if strout:
+        return SIstr(result) + "A"
+    else:
+        return result

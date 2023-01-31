@@ -188,24 +188,36 @@ def state_judgement(dl1 : list, config : Config) -> bool:
             indx=sw_t.index(earlest_sw_t)
         if output_type:
             if empty_flag:
+                #print("a")
                 return False
             if input_time<earlest_sw_t and earlest_sw_t<(input_time+output_interval):
                 #確認したoutputは削除する
                 dl.remove(dl_t[indx])
+                #print("b")
                 return True
             else:
+                #print("c")
                 return False
         else:
-            if input_time<earlest_sw_t and earlest_sw_t<(input_time+output_interval):
-                #False終了なので削除する必要はない
-                #dl.remove(dl_t[indx])
-                return False
-            if earlest_sw_t<input_time:
-                #False終了なので削除する必要はない
-                #dl.remove(dl_t[indx])
-                return False
-            if (input_time+output_interval)<earlest_sw_t or empty_flag:
-                #削除しない
+            #出力があるなら入力との時間差を調べる
+            if not empty_flag:
+                if input_time<earlest_sw_t and earlest_sw_t<(input_time+output_interval):
+                    #False終了なので削除する必要はない
+                    #dl.remove(dl_t[indx])
+                    #print("d")
+                    return False
+                if earlest_sw_t<input_time:
+                    #False終了なので削除する必要はない
+                    #dl.remove(dl_t[indx])
+                    print(earlest_sw_t)
+                    #print("e")
+                    return False
+                if (input_time+output_interval)<earlest_sw_t or empty_flag:
+                    #削除しない
+                    #print("f")
+                    return True
+            #出力が無ければ調べるまでもなくTrue
+            else:
                 return True
             
 

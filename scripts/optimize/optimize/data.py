@@ -188,6 +188,16 @@ class Data:
         else:
             return state_judgement(res, self.conf)
 
+    def only_state_judge(self, param : pd.Series = pd.Series(dtype='float64')) -> bool:
+        if param.empty:
+            print("Using default parameters")
+            param = self.vdf['def']
+        res = get_switch_timing(self.conf, self.__data_sim(param))
+        if self.conf.state_judge==False:
+            print("state_judge flag is False!!!")
+            return False
+        else:
+            return state_judgement(res, self.conf)
 
     def custom_simulation(self, res_df : pd.DataFrame):
         param = copy.deepcopy(self.vdf['def'])
