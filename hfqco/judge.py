@@ -39,12 +39,12 @@ def get_switch_timing(config : Config, data : pd.DataFrame, plot = False, timesc
             for i in range(len(srs)-1):
                 if (srs.iat[i] - (flag*p2 + judge_phase)) * (srs.iat[i+1] - (flag*p2 + judge_phase)) < 0:
                     flag = flag + 1
-                    # res_df.append({'time':srs.index[i], 'phase':flag, 'element':column_name})
-                    res_df = pd.concat([res_df, pd.DataFrame([{'time':srs.index[i], 'phase':flag, 'element':column_name}])], ignore_index=True)
+                    res_df.append({'time':srs.index[i], 'phase':flag, 'element':column_name})
+                    # res_df = pd.concat([res_df, pd.DataFrame([{'time':srs.index[i], 'phase':flag, 'element':column_name}])], ignore_index=True)
                 elif (srs.iat[i] - ((flag-1)*p2 + judge_phase)) * (srs.iat[i+1] - ((flag-1)*p2 + judge_phase)) < 0:
                     flag = flag - 1
-                    # res_df.append({'time':srs.index[i], 'phase':flag, 'element':column_name})
-                    res_df = pd.concat([res_df, pd.DataFrame([{'time':srs.index[i], 'phase':flag, 'element':column_name}])], ignore_index=True)
+                    res_df.append({'time':srs.index[i], 'phase':flag, 'element':column_name})
+                    # res_df = pd.concat([res_df, pd.DataFrame([{'time':srs.index[i], 'phase':flag, 'element':column_name}])], ignore_index=True)
 
     if not config.voltage_ele == []:
         for vol in config.voltage_ele:
