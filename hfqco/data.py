@@ -3,7 +3,7 @@ import re
 import pandas as pd
 from .util import stringToNum, isfloat, isint, vaild_number
 from .pyjosim import simulation
-from .judge import get_switch_timing, compare_switch_timings
+from .judge import get_switch_timing, compare_switch_timings, compare_switch_timings_detials, get_propagation_switch_defference, get_propagation_switch_defference_with_delay
 from .config import Config
 from .calculator import shunt_calc, rand_norm
 from .graph import margin_plot, sim_plot
@@ -19,6 +19,8 @@ from tqdm import tqdm
 
 class Data:
     def __init__(self, raw_data : str, config : dict):
+
+        #self.sim_data_for_custom
         
         # get variable
         self.vdf, self.raw_sim_data = self.__get_variable(raw=raw_data)
@@ -28,6 +30,9 @@ class Data:
 
         # create netlist
         self.sim_data = self.__create_netlist(self.raw_sim_data, self.conf)
+
+        # create netlist add .temp 4.2(default)
+        #self.sim_data_with_noise = self.__create_netlist_noise(self.raw_sim_data, self.conf)
 
         # Base switch timing
         self.base_switch_timing = None
@@ -155,6 +160,30 @@ class Data:
         raw = raw + ".end"
         return raw
 
+    def __create_netlist_noise(self, netlist, conf : Config, Temp : int=4.2) -> str:
+        # raw のリセット
+        raw = ""
+        # .print .endの行を取得
+        for line in netlist.splitlines():
+            
+            print_obj = re.search('\.print',line, flags=re.IGNORECASE)
+            end_obj = re.search('\.end$',line, flags=re.IGNORECASE)
+            if not print_obj and not end_obj:
+                raw = raw + line + "\n"
+
+        if not conf.phase_ele==[]:
+            for ll in conf.phase_ele:
+                for l in ll:
+                    raw = raw + ".print phase " + l + "\n"
+
+        if not conf.voltage_ele==[]:
+            for l in conf.voltage_ele:
+                raw = raw + ".print devv " + l + "\n"
+
+        raw = raw + ".temp "+str(Temp)
+        raw = raw + ".end"
+        return raw
+
     def data_simulation(self,  plot = True):
         copied_sim_data = self.raw_sim_data
 
@@ -162,6 +191,20 @@ class Data:
             parameters : pd.Series =  self.vdf['def']
             for index in parameters.index:
                 copied_sim_data = copied_sim_data.replace('#('+index+')', str(parameters[index]))
+                
+        df = simulation(copied_sim_data)
+        if plot:
+            sim_plot(df)
+        return df
+
+    def data_simulation_with_noise(self,  plot = True, Temp : int=4.2):
+        self.sim_data_with_noise = self.__create_netlist_noise(self.raw_sim_data, self.conf, Temp)
+        copied_sim_data = self.sim_data_with_noise
+
+        #if not self.vdf.empty:
+        parameters : pd.Series =  self.vdf['def']
+        for index in parameters.index:
+            copied_sim_data = copied_sim_data.replace('#('+index+')', str(parameters[index]))
                 
         df = simulation(copied_sim_data)
         if plot:
@@ -189,8 +232,60 @@ class Data:
         for index in parameters.index:
             copied_sim_data = copied_sim_data.replace('#('+index+')', str(parameters[index]))
 
+        #self.sim_data_for_custom=copied_sim_data
+
         df = simulation(copied_sim_data)
         return df
+
+    def __data_sim_with_noise(self, parameters : pd.Series, Temp : int) -> pd.DataFrame:
+        self.sim_data_with_noise = self.__create_netlist_noise(self.raw_sim_data, self.conf, Temp)
+        copied_sim_data = self.sim_data_with_noise
+        for index in parameters.index:
+            copied_sim_data = copied_sim_data.replace('#('+index+')', str(parameters[index]))
+
+        df = simulation(copied_sim_data)
+        return df
+    
+    def only_output_custom_netlist(self, res_df : pd.DataFrame, path : str) -> bool:
+        param = copy.deepcopy(self.vdf['def'])
+        res_df['margin'] = 0
+        #copied_sim_data = self.sim_data
+
+        for num, srs in tqdm(res_df.iterrows(), total=len(res_df)):
+            copied_sim_data = self.sim_data
+
+            # 値の書き換え
+            for colum, value in srs.items():
+                if not colum == 'param':
+                    param[colum] = value
+            # create netlist
+            for index in param.index:
+                copied_sim_data = copied_sim_data.replace('#('+index+')', '#'+index+'('+str(param[index])+')')
+
+            #return copied_sim_data
+            with open(path+"/netlist"+str(num)+".inp","w") as o:
+                print(copied_sim_data, file=o)
+
+            #res_df.at[num,'margin'] = self.get_critical_margin(param = param)[1]
+        return True
+
+    def only_operation_judge(self, parameters : pd.Series = pd.Series(dtype='float64')):
+        """ if param.empty:
+            print("Using default parameters")
+            param = self.sim_data_with_noise
+        res = get_switch_timing(self.conf, self.__data_sim(param))
+        return compare_switch_timings(res, self.base_switch_timing, self.conf) """
+        res = get_switch_timing(self.conf, self.__data_sim(parameters))
+        return compare_switch_timings(res, self.base_switch_timing, self.conf)
+
+
+    def only_operation_judge_with_noise(self, parameters : pd.Series = pd.Series(dtype='float64'), Temp : int=4.2)-> bool:
+        res = get_switch_timing(self.conf, self.__data_sim_with_noise(parameters, Temp))
+        return compare_switch_timings(res, self.base_switch_timing, self.conf)
+
+    def only_operation_judge_with_noise_details(self, parameters : pd.Series = pd.Series(dtype='float64'), Temp : int=4.2)-> str:
+        res = get_switch_timing(self.conf, self.__data_sim_with_noise(parameters, Temp))
+        return compare_switch_timings_detials(res, self.base_switch_timing, self.conf)
 
     def __operation_judge(self, parameters : pd.Series):
         res = get_switch_timing(self.conf, self.__data_sim(parameters))
@@ -199,6 +294,50 @@ class Data:
     def __operation_judge_2(self, parameters : pd.Series, num : int):
         res = get_switch_timing(self.conf, self.__data_sim(parameters))
         return (compare_switch_timings(res, self.base_switch_timing, self.conf),num)
+
+    def only_get_propagation_time_defference(self, start_ele : str, end_ele : str, pulse_num : int, params_raw_num : int, param : pd.Series = pd.Series(dtype='float64'))-> float:
+        # print(param)
+        result=float()
+        if param.empty:
+            print("Using default parameters")
+            param = self.vdf['def']
+            print('<<<<<<<<param>>>>>>>>')
+            print(param)
+        res = get_switch_timing(self.conf, self.__data_sim(param))
+        try:
+            result=get_propagation_switch_defference(res, start_ele, end_ele, pulse_num)
+        except ValueError:
+            print('params_raw_num='+str(params_raw_num))
+            sys.exit()
+        finally:
+            return result
+        
+    def only_get_propagation_time_defference_with_delay(self, start_ele : str, end_ele : str, pulse_num : int, params_raw_num : int, param : pd.Series = pd.Series(dtype='float64'))-> dict:
+        # print(param)
+        result=dict()
+        if param.empty:
+            print("Using default parameters")
+            param = self.vdf['def']
+            print('<<<<<<<<param>>>>>>>>')
+            print(param)
+        res = get_switch_timing(self.conf, self.__data_sim(param))
+        try:
+            result=get_propagation_switch_defference_with_delay(res, start_ele, end_ele, pulse_num)
+        except ValueError:
+            print('params_raw_num='+str(params_raw_num))
+            sys.exit()
+        finally:
+            return result
+
+    def __get_propagation_time_defference(self, start_ele : str, end_ele : str, num : int, param : pd.Series = pd.Series(dtype='float64'))-> float:
+        # print(param)
+        if param.empty:
+            print("Using default parameters")
+            param = self.vdf['def']
+            #print('<<<<<<<<param>>>>>>>>')
+            #print(param)
+        res = get_switch_timing(self.conf, self.__data_sim(param))
+        return get_propagation_switch_defference(res, start_ele, end_ele, num)
 
 
     def custom_opera_judge(self, res_df : pd.DataFrame):
@@ -266,6 +405,98 @@ class Data:
 
         return res_df
 
+    def custom_simulation_with_bias_margin_async(self, res_df : pd.DataFrame):
+        param = copy.deepcopy(self.vdf['def'])
+        
+        # tqdmで経過が知りたい時
+        with tqdm(total=len(res_df)) as progress:
+            futures = []
+            with concurrent.futures.ThreadPoolExecutor(max_workers=32) as executor:
+               
+                for num, srs in res_df.iterrows():
+                    # 値の書き換え
+                    for colum, value in srs.items():
+                        if not colum == 'param':
+                            param[colum] = value
+
+                    inp = copy.deepcopy(param)
+                    future = executor.submit(self.get_critical_margin_sync_with_bias_margin, num, inp)
+                    future.add_done_callback(lambda p: progress.update()) # tqdmで経過が知りたい時
+                    futures.append(future)
+
+        for future in tqdm(concurrent.futures.as_completed(futures), total=len(futures)):
+            res : tuple = future.result()
+            res_df.at[res[0],'min_ele'] = res[1]
+            res_df.at[res[0],'min_margin'] = res[2]
+            res_df.at[res[0],'bias_margin+'] = res[3]
+            res_df.at[res[0],'bias_margin-'] = res[4]
+
+        return res_df
+
+    def custom_get_propagation_time_defferences_async(self, start_ele : str, end_ele : str, pulse_num : int, res_df : pd.DataFrame):
+        if self.base_switch_timing == None:
+            print("\033[31mFirst, you must get the base switch timing.\nPlease use 'get_base_switch_timing()' method before getting the margin.\033[0m")
+            sys.exit()
+
+        param = copy.deepcopy(self.vdf['def'])
+        res_df['Ave_delay_defference']=0
+
+        # tqdmで経過が知りたい時
+        with tqdm(total=len(res_df)) as progress:
+            futures = []
+            with concurrent.futures.ThreadPoolExecutor(max_workers=32) as executor:
+               
+                for num, srs in res_df.iterrows():
+                    # 値の書き換え
+                    for colum, value in srs.items():
+                        if not colum == 'param':
+                            param[colum] = value
+
+                    res = copy.deepcopy(param)
+                    future = executor.submit(self.only_get_propagation_time_defference, start_ele, end_ele, pulse_num, num, res)
+                    future.add_done_callback(lambda p: progress.update()) # tqdmで経過が知りたい時
+                    futures.append(future)
+
+                    for future in tqdm(concurrent.futures.as_completed(futures), total=len(futures)):
+                        result=future.result()
+                        print(result)
+                        res_df.at[num, 'Ave_delay_defference'] = result
+    
+        return res_df
+    
+    def custom_get_propagation_time_defferences_with_all_delay_async(self, start_ele : str, end_ele : str, pulse_num : int, res_df : pd.DataFrame):
+        if self.base_switch_timing == None:
+            print("\033[31mFirst, you must get the base switch timing.\nPlease use 'get_base_switch_timing()' method before getting the margin.\033[0m")
+            sys.exit()
+
+        param = copy.deepcopy(self.vdf['def'])
+        res_df['Ave_delay_defference']=0
+
+        # tqdmで経過が知りたい時
+        with tqdm(total=len(res_df)) as progress:
+            futures = []
+            with concurrent.futures.ThreadPoolExecutor(max_workers=32) as executor:
+               
+                for num, srs in res_df.iterrows():
+                    # 値の書き換え
+                    for colum, value in srs.items():
+                        if not colum == 'param':
+                            param[colum] = value
+
+                    res = copy.deepcopy(param)
+                    future = executor.submit(self.only_get_propagation_time_defference_with_delay, start_ele, end_ele, pulse_num, num, res)
+                    future.add_done_callback(lambda p: progress.update()) # tqdmで経過が知りたい時
+                    futures.append(future)
+
+                    for future in tqdm(concurrent.futures.as_completed(futures), total=len(futures)):
+                        result=future.result()
+                        print(result)
+                        res_df.at[num, 'Ave_delay_defference'] = result['switch_defference']
+                        res_df.at[num, 'even_delay'] = result['even_delay']
+                        res_df.at[num, 'odd_delay'] = result['odd_delay']
+    
+        return res_df
+
     def get_critical_margin(self,  param : pd.Series = pd.Series(dtype='float64')) -> tuple:
         margins = self.get_margins(param = param, plot=False)
         
@@ -293,6 +524,25 @@ class Data:
                     min_ele = element
         
         return (num, min_ele, min_margin)
+
+    def get_critical_margin_sync_with_bias_margin(self,num : int, param : pd.Series = pd.Series(dtype='float64')) -> tuple:
+        margins = self.get_margins_sync(param = param, plot=False)
+        
+        min_margin = 100
+        min_ele = None
+        bias_margin_p=0
+        bias_margin_m=0
+        for element in margins.index:
+            if not self.vdf.at[element,'fix']:
+                # 最小マージンの素子を探す。
+                if abs(margins.at[element,'low(%)']) < min_margin or abs(margins.at[element,'high(%)']) < min_margin:
+                    min_margin = vaild_number(min(abs(margins.at[element,'low(%)']), abs(margins.at[element,'high(%)'])), 4)
+                    min_ele = element
+            if element=='BIAS':
+                bias_margin_p=vaild_number(abs(margins.at[element,'high(%)']),4)
+                bias_margin_m=vaild_number(abs(margins.at[element,'low(%)']),4)
+        
+        return (num, min_ele, min_margin, bias_margin_p, bias_margin_m)
 
     def get_margins_sync(self, param : pd.Series = pd.Series(dtype='float64'), plot : bool = True, blackstyle : bool = False, accuracy : int = 8) -> pd.DataFrame:
         if self.base_switch_timing == None:
@@ -480,7 +730,7 @@ class Data:
                 for i in range(10):
                     print(str(k)+":"+str(j)+":"+str(i)+"の最適化")
                     # マージンの計算
-                    margins = self.get_margins(param=self.vdf['sub'])
+                    margins = self.get_margins(param=self.vdf['sub'],plot=False)
 
                     min_margin = 100
                     
@@ -555,7 +805,7 @@ class Data:
 
                 # 保存する
                 print("保存")
-                self.__plot(margins_for_plot, directory+"/"+str(k)+"-x.png")
+                #self.__plot(margins_for_plot, directory+"/"+str(k)+"-x.png")
                 main_parameters.to_csv(directory+"/"+str(k)+"-main.csv")
                 with open(directory+"/"+str(k)+"-netlist.txt","w") as f:
                     copied_sim_data = self.sim_data

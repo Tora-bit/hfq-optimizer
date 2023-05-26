@@ -1,5 +1,6 @@
 import pandas as pd
 import math
+import numpy as np
 import re
 from .config import Config
 import matplotlib.pyplot as plt
@@ -91,5 +92,99 @@ def compare_switch_timings(dl1 : list, dl2 : list, config : Config) -> bool:
         return True
     else:
         return False
+
+def compare_switch_timings_detials(dl1 : list, dl2 : list, config : Config) -> str:
+
+    def get_dict(dict_list : list, phase : int, element : str) -> float:
+        for l in dict_list:
+            if l['phase'] == phase and l['element'] == element:
+                return l['time']
+        return 0
+
+    # Number of switches is different
+    if len(dl1) == len(dl2):
+        for l1 in dl1:
+            l2_time = get_dict(dl2, l1['phase'], l1['element'])
+            l1_time = l1['time']
+            if l2_time < l1_time - config.pulse_delay or l1_time + config.pulse_delay < l2_time:
+                return str("delay_fail")
+        return str("true")
+    else:
+        return str("num_fail")
+
+
+def get_propagation_switch_defference(dl : list, start_ele : str, end_ele : str, num : int)-> float:
+    print('len(dl)='+str(len(dl)))
+    if len(dl)!=(num*2):
+        raise ValueError("\033[31mThe number of pulses is an unexpected value.\033[0m")
     
- 
+    sw_time_first=list()
+    #phase_first=list()
+    sw_time_end=list()
+    #phase_end=list()
+    for l in dl:
+        print(l)
+        if(l['element']==start_ele):
+            sw_time_first.append(l['time'])
+        if(l['element']==end_ele):
+            sw_time_end.append(l['time'])
+
+    #time_list.append(l['time'])
+    #print(len(sw_time_first))
+    #print(len(sw_time_end))
+    delay_list=list()
+    for i in range(10):
+        #print(sw_time_end[i]-sw_time_first[i])
+        delay_list.append(sw_time_end[i]-sw_time_first[i])
+
+    #print(delay_list)
+    delay_per=list()
+    for i in range(len(delay_list)):
+        delay_per.append(delay_list[i]/(101-1))
+
+    delay_defference_list=list()
+    for i in range(len(delay_per)):
+        if i%2 == 0:
+            delay_defference_list.append(delay_per[i+1]-delay_per[i])
+
+    return np.mean(delay_defference_list)
+
+def get_propagation_switch_defference_with_delay(dl : list, start_ele : str, end_ele : str, num : int)-> dict:
+    print('len(dl)='+str(len(dl)))
+    if len(dl)!=(num*2):
+        raise ValueError("\033[31mThe number of pulses is an unexpected value.\033[0m")
+    
+    sw_time_first=list()
+    #phase_first=list()
+    sw_time_end=list()
+    #phase_end=list()
+    for l in dl:
+        print(l)
+        if(l['element']==start_ele):
+            sw_time_first.append(l['time'])
+        if(l['element']==end_ele):
+            sw_time_end.append(l['time'])
+
+    #time_list.append(l['time'])
+    #print(len(sw_time_first))
+    #print(len(sw_time_end))
+    delay_list=list()
+    for i in range(10):
+        #print(sw_time_end[i]-sw_time_first[i])
+        delay_list.append(sw_time_end[i]-sw_time_first[i])
+
+    #print(delay_list)
+    delay_per=list()
+    for i in range(len(delay_list)):
+        delay_per.append(delay_list[i]/(101-1))
+
+    delay_defference_list=list()
+    for i in range(len(delay_per)):
+        if i%2 == 0:
+            delay_defference_list.append(delay_per[i+1]-delay_per[i])
+
+    out_dict=dict()
+    out_dict['switch_defference']=np.mean(delay_defference_list)
+    out_dict['even_delay']=np.mean(delay_list[0::2])
+    out_dict['odd_delay']=np.mean(delay_list[1::2])
+    return out_dict

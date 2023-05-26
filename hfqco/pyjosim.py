@@ -15,3 +15,4 @@ def simulation(simulation_data : str) -> pd.DataFrame:
         raise ValueError("\033[31m" + result.stderr + "\033[0m")
     
     return pd.read_csv(io.StringIO(split_data),index_col=0,header=0, sep='\s+') if split_data is not None else None
+    #return pd.read_csv(io.StringIO(split_data),header=0, sep='\s+') if split_data is not None else None
