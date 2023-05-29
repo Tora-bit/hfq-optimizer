@@ -188,3 +188,33 @@ def get_propagation_switch_defference_with_delay(dl : list, start_ele : str, end
     out_dict['even_delay']=np.mean(delay_list[0::2])
     out_dict['odd_delay']=np.mean(delay_list[1::2])
     return out_dict
+
+#num_of_ele1とnum_of_ele2は何番目のパルスを比較するのか指定する
+def get_switch_difference_time(dl : list, element1 : str, num_of_ele1 : list , element2 : str, num_of_ele2 : list)->list:
+    sw_ele1=list()
+    sw_ele2=list()
+    output_list=list()
+    if dl==[]:
+        raise ValueError("No switch!!!")
+    for l in dl:
+        if l['element']==element1:
+            sw_ele1.append(l)
+        if l['element']==element2:
+            sw_ele2.append(l)
+    for e1 in sw_ele1:
+        for e2 in sw_ele2:
+            for n1 in num_of_ele1:
+                for n2 in num_of_ele2:
+                    #print('e1='+str(e1['phase']))
+                    #print('n1='+str(n1))
+                    #print('e2='+str(e2['phase']))
+                    #print('n2='+str(n2))
+                    if e1['phase']==n1 and e2['phase']==n2:
+                        temp=dict()
+                        print(e2)
+                        print(e1)
+                        temp['difference_time']=e2['time']-e1['time']
+                        temp['num']=str(n2)+"-"+str(n1)
+                        output_list.append(temp)
+    #print(len(output_list))    
+    return output_list
