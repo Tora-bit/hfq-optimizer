@@ -3,7 +3,7 @@ import re
 import pandas as pd
 from .util import stringToNum, isfloat, isint, vaild_number
 from .pyjosim import simulation
-from .judge import get_switch_timing, compare_switch_timings, compare_switch_timings_detials, get_propagation_switch_defference, get_propagation_switch_defference_with_delay
+from .judge import get_switch_timing, compare_switch_timings, compare_switch_timings_detials, get_propagation_switch_defference, get_propagation_switch_defference_with_delay, get_switch_difference_time
 from .config import Config
 from .calculator import shunt_calc, rand_norm
 from .graph import margin_plot, sim_plot
@@ -15,7 +15,7 @@ import os
 import sys
 import shutil
 from tqdm import tqdm
-
+from decimal import Decimal, ROUND_HALF_UP, ROUND_HALF_EVEN
 
 class Data:
     def __init__(self, raw_data : str, config : dict):
@@ -23,16 +23,16 @@ class Data:
         #self.sim_data_for_custom
         
         # get variable
-        self.vdf, self.raw_sim_data = self.__get_variable(raw=raw_data)
+        self.vdf, self.sim_data = self.__get_variable(raw=raw_data)
 
         # check config file
         self.conf : Config = Config(config)
 
         # create netlist
-        self.sim_data = self.__create_netlist(self.raw_sim_data, self.conf)
+        self.sim_data = self.__create_netlist(self.sim_data, self.conf)
 
         # create netlist add .temp 4.2(default)
-        #self.sim_data_with_noise = self.__create_netlist_noise(self.raw_sim_data, self.conf)
+        #self.sim_data_with_noise = self.__create_netlist_noise(self.sim_data, self.conf)
 
         # Base switch timing
         self.base_switch_timing = None
@@ -185,7 +185,7 @@ class Data:
         return raw
 
     def data_simulation(self,  plot = True):
-        copied_sim_data = self.raw_sim_data
+        copied_sim_data = self.sim_data
 
         if not self.vdf.empty:
             parameters : pd.Series =  self.vdf['def']
@@ -198,7 +198,7 @@ class Data:
         return df
 
     def data_simulation_with_noise(self,  plot = True, Temp : int=4.2):
-        self.sim_data_with_noise = self.__create_netlist_noise(self.raw_sim_data, self.conf, Temp)
+        self.sim_data_with_noise = self.__create_netlist_noise(self.sim_data, self.conf, Temp)
         copied_sim_data = self.sim_data_with_noise
 
         #if not self.vdf.empty:
@@ -221,7 +221,7 @@ class Data:
         return self.base_switch_timing
 
     def public_sim(self, parameters : pd.Series) -> pd.DataFrame:
-        copied_sim_data = self.raw_sim_data
+        copied_sim_data = self.sim_data
         for index in parameters.index:
             copied_sim_data = copied_sim_data.replace('#('+index+')', str(parameters[index]))
         df = simulation(copied_sim_data)
@@ -238,7 +238,7 @@ class Data:
         return df
 
     def __data_sim_with_noise(self, parameters : pd.Series, Temp : int) -> pd.DataFrame:
-        self.sim_data_with_noise = self.__create_netlist_noise(self.raw_sim_data, self.conf, Temp)
+        self.sim_data_with_noise = self.__create_netlist_noise(self.sim_data, self.conf, Temp)
         copied_sim_data = self.sim_data_with_noise
         for index in parameters.index:
             copied_sim_data = copied_sim_data.replace('#('+index+')', str(parameters[index]))
@@ -496,6 +496,116 @@ class Data:
                         res_df.at[num, 'odd_delay'] = result['odd_delay']
     
         return res_df
+
+    #num_of_clkとnum_of_inoutは何番目のパルスを比較するのか指定する
+    def get_setup_hold_time(self, input_pwl : str, clk_element : str, num_of_clk : list, input_element : str, num_of_input : list, output_element : str, num_of_output : list, initial_time_of_data : int, shift_renge=1, shift_interval=0.1, param : pd.Series = pd.Series(dtype='float64')):
+        output_dict=dict()
+
+        #時間の単位はps
+        def rewrite_pwl(netlist : str, element_name : str, start_time : float , period : float, num : int, dc_or_pulse='pulse') -> dict:
+            output_dict=dict()
+            temp_str=str()
+            temp_list=re.findall(element_name+'.+\s\d\s.+', netlist)
+            first_str_list=re.split('\(',temp_list[0])
+            first = "(0ps 0mv "
+            tab = " "
+            ps = "ps"
+            mv = "mv "
+            end = ")"
+            if dc_or_pulse=='pulse':
+                temp_str=first_str_list[0]+first
+                for i in range(num):
+                    temp_str=temp_str+(str(Decimal(str(start_time + period * i)).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)) + ps + tab + "0" + mv)
+                    temp_str=temp_str+(str(Decimal(str(start_time + 1.0 + period * i)).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)) + ps + tab + "1.035" + mv)
+                    temp_str=temp_str+(str(Decimal(str(start_time + 2.0 + period * i)).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)) + ps + tab + "1.035" + mv)
+                    temp_str=temp_str+(str(Decimal(str(start_time + 3.0 + period * i)).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)) + ps + tab + "0" + mv)
+                temp_str+=end
+            #print(temp_str)
+            output_dict['input_pwl']=temp_str
+            output_dict['netlist']=re.sub(element_name+'.+\s\d\s.+', temp_str, netlist)
+            #print(output_str)
+            return output_dict
+        
+        #2つのクロックとその間の入力による出力の時間差を得る
+        #def get_output_timing(clk_element, num_of_clk, output_element, num_of_output) -> list:
+        #    if param.empty:
+        #        print("Using default parameters")
+        #        param = self.vdf['def']
+        #    res = get_switch_timing(self.conf, self.__data_sim(param))
+        #    return get_switch_difference_time(res, clk_element, [num_of_clk[1]], output_element, num_of_output)
+
+        print("Checking holdtime...")
+        self.sim_data=rewrite_pwl(self.sim_data, input_pwl, initial_time_of_data, 200, 1)['netlist']
+        if param.empty:
+            print("Using default parameters")
+            param = self.vdf['def']
+        res = get_switch_timing(self.conf, self.__data_sim(param))
+        #setup_hold=get_switch_difference_time(res, clk_element, num_of_clk, input_element, num_of_input)
+        output_timing=get_switch_difference_time(res, clk_element, [num_of_clk[1]], output_element, num_of_output)
+        if output_timing==[] or output_timing[0]['difference_time']<0:
+            raise ValueError("Input maybe too late or early.")
+        
+        temp_initial_time=initial_time_of_data
+        temp_holdtime=list()
+        temp_dict=dict()
+        temp_pwl=str()
+        while(True):
+            #for i in range((int)(shift_renge/shift_interval)):
+            temp_initial_time+=shift_interval
+            temp_dict=rewrite_pwl(self.sim_data, input_pwl, temp_initial_time, 200, 1)
+            self.sim_data=temp_dict['netlist']
+            if param.empty:
+                print("Using default parameters")
+                param = self.vdf['def']
+            res_new = get_switch_timing(self.conf, self.__data_sim(param))
+            output_timing=get_switch_difference_time(res_new, clk_element, [num_of_clk[1]], output_element, num_of_output)
+            if output_timing==[]:
+                #print(self.sim_data)
+                print("num of temp_holdtime="+str(len(temp_holdtime)))
+                print(temp_pwl)
+                break
+            temp_holdtime=get_switch_difference_time(res_new, input_element, num_of_input, clk_element, [num_of_clk[1]],)
+            temp_pwl=temp_dict['input_pwl']
+            #print(temp_holdtime)
+        #print("num of temp_holdtime="+str(len(temp_holdtime)))
+        output_dict['holdtime']=temp_holdtime[0]['difference_time']
+
+
+        print("Checking setuptime...")
+        self.sim_data=rewrite_pwl(self.sim_data, input_pwl, initial_time_of_data, 200, 1)['netlist']
+        if param.empty:
+            print("Using default parameters")
+            param = self.vdf['def']
+        res = get_switch_timing(self.conf, self.__data_sim(param))
+        #setup_hold=get_switch_difference_time(res, clk_element, num_of_clk, input_element, num_of_input)
+        output_timing=get_switch_difference_time(res, clk_element, [num_of_clk[1]], output_element, num_of_output)
+        if output_timing==[] or output_timing[0]['difference_time']<0:
+            raise ValueError("Input maybe too late or early.")
+        
+        temp_initial_time=initial_time_of_data
+        temp_setuptime=list()
+        while(True):
+            #for i in range((int)(shift_renge/shift_interval)):
+            temp_initial_time-=shift_interval
+            temp_dict=rewrite_pwl(self.sim_data, input_pwl, temp_initial_time, 200, 1)
+            self.sim_data=temp_dict['netlist']
+            if param.empty:
+                print("Using default parameters")
+                param = self.vdf['def']
+            res_new = get_switch_timing(self.conf, self.__data_sim(param))
+            output_timing=get_switch_difference_time(res_new, clk_element, [num_of_clk[1]], output_element, num_of_output)
+            if output_timing[0]['difference_time']<0:
+                #print(self.sim_data)
+                print("num of temp_setuptime="+str(len(temp_setuptime)))
+                print(temp_pwl)
+                break
+            temp_setuptime=get_switch_difference_time(res_new ,clk_element, [num_of_clk[0]], input_element, num_of_input)
+            temp_pwl=temp_dict['input_pwl']
+            #print(temp_setuptime)
+        #print("num of temp_setuptime="+str(len(temp_setuptime)))
+        output_dict['setuptime']=temp_setuptime[0]['difference_time']
+        
+        return output_dict
 
     def get_critical_margin(self,  param : pd.Series = pd.Series(dtype='float64')) -> tuple:
         margins = self.get_margins(param = param, plot=False)
