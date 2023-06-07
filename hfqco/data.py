@@ -268,6 +268,80 @@ class Data:
 
             #res_df.at[num,'margin'] = self.get_critical_margin(param = param)[1]
         return True
+    
+    def only_output_custom_raw_netlist(self, res_df : pd.DataFrame, path : str) -> bool:
+        param = copy.deepcopy(self.vdf['def'])
+        res_df['margin'] = 0
+        #copied_sim_data = self.sim_data
+
+        for num, srs in tqdm(res_df.iterrows(), total=len(res_df)):
+            copied_sim_data = self.raw_sim_data
+
+            # 値の書き換え
+            for colum, value in srs.items():
+                if not colum == 'param':
+                    param[colum] = value
+            # create netlist
+            for index in param.index:
+                copied_sim_data = copied_sim_data.replace('#('+index+')', '#'+index+'('+str(param[index])+')')
+
+            #return copied_sim_data
+            with open(path+"/netlist"+str(num)+".inp","w") as o:
+                print(copied_sim_data, file=o)
+
+            #res_df.at[num,'margin'] = self.get_critical_margin(param = param)[1]
+        return True
+    
+    def only_output_list_custom_netlist(self, res_df : pd.DataFrame) -> list:
+        output=list()
+        param = copy.deepcopy(self.vdf['def'])
+        res_df['margin'] = 0
+        #copied_sim_data = self.sim_data
+
+        for num, srs in tqdm(res_df.iterrows(), total=len(res_df)):
+            copied_sim_data = self.sim_data
+
+            # 値の書き換え
+            for colum, value in srs.items():
+                if not colum == 'param':
+                    param[colum] = value
+            # create netlist
+            for index in param.index:
+                copied_sim_data = copied_sim_data.replace('#('+index+')', '#'+index+'('+str(param[index])+')')
+            
+            output.append(copied_sim_data)
+            #return copied_sim_data
+            #with open(path+"/netlist"+str(num)+".inp","w") as o:
+            #    print(copied_sim_data, file=o)
+
+            #res_df.at[num,'margin'] = self.get_critical_margin(param = param)[1]
+        return output
+    
+    def only_output_list_custom_raw_netlist(self, res_df : pd.DataFrame) -> list:
+        output=list()
+        param = copy.deepcopy(self.vdf['def'])
+        res_df['margin'] = 0
+        #copied_sim_data = self.sim_data
+
+        for num, srs in tqdm(res_df.iterrows(), total=len(res_df)):
+            copied_sim_data = self.raw_sim_data
+
+            # 値の書き換え
+            for colum, value in srs.items():
+                if not colum == 'param':
+                    param[colum] = value
+            # create netlist
+            for index in param.index:
+                copied_sim_data = copied_sim_data.replace('#('+index+')', '#'+index+'('+str(param[index])+')')
+            
+            output.append(copied_sim_data)
+            #return copied_sim_data
+            #with open(path+"/netlist"+str(num)+".inp","w") as o:
+            #    print(copied_sim_data, file=o)
+
+            #res_df.at[num,'margin'] = self.get_critical_margin(param = param)[1]
+        return output
+
 
     def only_operation_judge(self, parameters : pd.Series = pd.Series(dtype='float64')):
         """ if param.empty:
