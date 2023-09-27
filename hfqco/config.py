@@ -56,6 +56,19 @@ class Config:
             if not type(config_data["output_interval"]) == float:
                 raise ValueError("\033[31m[output_interval]の値が読み取れません。\033[0m")
 
+
+        if not type(config_data["dc_judge"]):
+            raise ValueError("\033[31m[dc_judge]の値が読み取れません。\033[0m")
+        else:
+            self.dc_judge = config_data["dc_judge"]
+
+        if self.dc_judge:
+            if not config_data["list_of_dicts_of_resister_and_threshold"] == []:
+                if not type(config_data["list_of_dicts_of_resister_and_threshold"])==list:
+                    raise ValueError("\033[31m[list_of_dicts_of_resister_and_threshold]の値が読み取れません。"+"\033[0m")
+                if not type(config_data["dc_delay"])==float:
+                    raise ValueError("\033[31m[dc_delay]の値が読み取れません。"+"\033[0m")
+
         #self.pre_start_time=config_data["avgcalc.pre_start.time"]
         #self.pre_end_time = config_data["avgcalc.pre_end.time"]
         self.start_time = config_data["avgcalc.start.time"]
@@ -75,10 +88,19 @@ class Config:
 
         if self.state_judge:
             #self.voltage_eleは要らない
-            self.voltage_ele = []
+            #self.voltage_ele = []
             self.state_judge = config_data["state_judge"]
             self.list_of_state = config_data["list_of_state"]
             self.list_of_transition = config_data["list_of_transition"]
             self.initial_state = config_data["initial_state"]
             self.output_element = config_data["output_ele"]
             self.output_interval = config_data["output_interval"]
+
+        if self.dc_judge:
+            # for il in config_data["list_of_dicts_of_resister_and_threshold"]:
+            #     self.voltage_thresholds = 
+            self.voltage_threshold = config_data["list_of_dicts_of_resister_and_threshold"]
+            self.dc_delay = config_data["dc_delay"]
+            for il in self.voltage_threshold:
+                self.voltage_ele.append(il["element"])
+            #self.trans_interval = config_data["trans_interval"]

@@ -2,8 +2,8 @@ from cmath import nan
 import re
 import pandas as pd
 from .util import stringToNum, isfloat, isint, vaild_number
-from .pyjosim import simulation
-from .judge import get_switch_timing, compare_switch_timings, compare_switch_timings_detials, get_propagation_switch_defference, get_propagation_switch_defference_with_delay, get_switch_difference_time
+from .pyjosim import simulation, simulation_from_rebuilt, simulation_from_rebuilt_NoSeed
+from .judge import get_switch_timing, get_dc_edge_timing, compare_switch_timings, compare_switch_timings_with_dc_judge, compare_switch_timings_detials, get_propagation_switch_defference, get_propagation_switch_defference_with_delay, get_switch_difference_time
 from .config import Config
 from .calculator import shunt_calc, rand_norm
 from .graph import margin_plot, sim_plot
@@ -36,6 +36,9 @@ class Data:
 
         # Base switch timing
         self.base_switch_timing = None
+
+        # Base DC switch timing
+        self.base_dc_switch_timing = None
 
     def set_base_switch_timing(self, switch_timing):
         self.base_switch_timing = switch_timing
@@ -180,7 +183,22 @@ class Data:
             for l in conf.voltage_ele:
                 raw = raw + ".print devv " + l + "\n"
 
-        raw = raw + ".temp "+str(Temp)
+        raw = raw + ".temp "+str(Temp)+"\n"
+        raw = raw + ".end"
+        return raw
+
+    def __create_raw_netlist_noise(self, raw_netlist, conf : Config, Temp : int=4.2) -> str:
+        # raw のリセット
+        raw = ""
+        # .print .endの行を取得
+        for line in raw_netlist.splitlines():
+            
+            #print_obj = re.search('\.print',line, flags=re.IGNORECASE)
+            end_obj = re.search('\.end$',line, flags=re.IGNORECASE)
+            if not end_obj:
+                raw = raw + line + "\n"
+
+        raw = raw + ".temp "+str(Temp)+"\n"
         raw = raw + ".end"
         return raw
 
@@ -211,6 +229,68 @@ class Data:
             sim_plot(df)
         return df
 
+    def data_raw_simulation_with_noise(self,  plot = True, Temp : int=4.2):
+        self.sim_data_with_noise = self.__create_raw_netlist_noise(self.raw_sim_data, self.conf, Temp)
+        copied_sim_data = self.sim_data_with_noise
+
+        if not self.vdf.empty:
+            parameters : pd.Series =  self.vdf['def']
+            for index in parameters.index:
+                copied_sim_data = copied_sim_data.replace('#('+index+')', str(parameters[index]))
+                
+        df = simulation(copied_sim_data)
+        if plot:
+            sim_plot(df)
+        return df
+
+    def data_simulation_with_noise_seed(self,  plot = True, Temp : int=4.2, Seed : int=0):
+        self.sim_data_with_noise = self.__create_netlist_noise(self.sim_data, self.conf, Temp)
+        copied_sim_data = self.sim_data_with_noise
+
+        #if not self.vdf.empty:
+        parameters : pd.Series =  self.vdf['def']
+        for index in parameters.index:
+            copied_sim_data = copied_sim_data.replace('#('+index+')', str(parameters[index]))
+
+        #print(copied_sim_data)
+                
+        df = simulation_from_rebuilt(copied_sim_data, Seed)
+        if plot:
+            sim_plot(df)
+        return df
+
+    def data_simulation_with_noise_noseed(self,  plot = True, Temp : int=4.2):
+            self.sim_data_with_noise = self.__create_netlist_noise(self.sim_data, self.conf, Temp)
+            copied_sim_data = self.sim_data_with_noise
+
+            #if not self.vdf.empty:
+            parameters : pd.Series =  self.vdf['def']
+            for index in parameters.index:
+                copied_sim_data = copied_sim_data.replace('#('+index+')', str(parameters[index]))
+
+            #print(copied_sim_data)
+                    
+            df = simulation_from_rebuilt_NoSeed(copied_sim_data)
+            if plot:
+                sim_plot(df)
+            return df
+
+    def data_raw_simulation_with_noise_seed(self,  plot = True, Temp : int=4.2, Seed : int=0):
+        self.sim_data_with_noise = self.__create_raw_netlist_noise(self.raw_sim_data, self.conf, Temp)
+        copied_sim_data = self.sim_data_with_noise
+
+        #if not self.vdf.empty:
+        parameters : pd.Series =  self.vdf['def']
+        for index in parameters.index:
+            copied_sim_data = copied_sim_data.replace('#('+index+')', str(parameters[index]))
+
+        #print(copied_sim_data)
+                
+        df = simulation_from_rebuilt(copied_sim_data, Seed)
+        if plot:
+            sim_plot(df)
+        return df
+
     def get_base_switch_timing(self,  plot = True, timescale = "ps", blackstyle = False):
         print("Simulate with default values.")
 
@@ -218,6 +298,8 @@ class Data:
         if plot:
             sim_plot(df, timescale, blackstyle)
         self.base_switch_timing = get_switch_timing(self.conf, df, plot, timescale, blackstyle)
+        if self.conf.dc_judge:
+            self.base_dc_switch_timing = get_dc_edge_timing(self.conf, df, False, timescale, blackstyle)
         return self.base_switch_timing
 
     def public_sim(self, parameters : pd.Series) -> pd.DataFrame:
@@ -238,6 +320,8 @@ class Data:
         return df
 
     def __data_sim_with_noise(self, parameters : pd.Series, Temp : int) -> pd.DataFrame:
+        if parameters.empty:
+            parameters : pd.Series =  self.vdf['def']
         self.sim_data_with_noise = self.__create_netlist_noise(self.sim_data, self.conf, Temp)
         copied_sim_data = self.sim_data_with_noise
         for index in parameters.index:
@@ -245,7 +329,27 @@ class Data:
 
         df = simulation(copied_sim_data)
         return df
-    
+
+    def __data_sim_with_noise_noseed(self, parameters : pd.Series, Temp : int) -> pd.DataFrame:
+        self.sim_data_with_noise = self.__create_netlist_noise(self.sim_data, self.conf, Temp)
+        copied_sim_data = self.sim_data_with_noise
+        for index in parameters.index:
+            copied_sim_data = copied_sim_data.replace('#('+index+')', str(parameters[index]))
+
+        df = simulation_from_rebuilt_NoSeed(copied_sim_data)
+        return df
+
+    def __data_sim_with_noise_by_myseed(self, parameters : pd.Series, Temp : int, myseed : int) -> pd.DataFrame:
+        self.sim_data_with_noise = self.__create_netlist_noise(self.sim_data, self.conf, Temp)
+        copied_sim_data = self.sim_data_with_noise
+        for index in parameters.index:
+            copied_sim_data = copied_sim_data.replace('#('+index+')', str(parameters[index]))
+
+        #print(copied_sim_data)
+        
+        df = simulation_from_rebuilt(copied_sim_data, myseed)
+        return df
+
     def only_output_custom_netlist(self, res_df : pd.DataFrame, path : str) -> bool:
         param = copy.deepcopy(self.vdf['def'])
         res_df['margin'] = 0
@@ -354,15 +458,98 @@ class Data:
 
 
     def only_operation_judge_with_noise(self, parameters : pd.Series = pd.Series(dtype='float64'), Temp : int=4.2)-> bool:
-        res = get_switch_timing(self.conf, self.__data_sim_with_noise(parameters, Temp))
+        result = self.__data_sim_with_noise(parameters, Temp)
+        res = get_switch_timing(self.conf, result)
+        #res = get_switch_timing(self.conf, self.__data_sim_with_noise(parameters, Temp))
+        if self.conf.dc_judge:
+            dc_res=get_dc_edge_timing(self.conf, result)
+            return compare_switch_timings_with_dc_judge(res, self.base_switch_timing, dc_res, self.base_dc_switch_timing, self.conf)
         return compare_switch_timings(res, self.base_switch_timing, self.conf)
+
+    def only_operation_judge_with_noise_noseed(self, parameters : pd.Series = pd.Series(dtype='float64'), Temp : int=4.2)-> bool:
+        result = self.__data_sim_with_noise_noseed(parameters, Temp)
+        res = get_switch_timing(self.conf, result)
+        #res = get_switch_timing(self.conf, self.__data_sim_with_noise_noseed(parameters, Temp))
+        if self.conf.dc_judge:
+            dc_res=get_dc_edge_timing(self.conf, result)
+            return compare_switch_timings_with_dc_judge(res, self.base_switch_timing, dc_res, self.base_dc_switch_timing, self.conf)
+        return compare_switch_timings(res, self.base_switch_timing, self.conf)
+
+    def only_operation_judge_with_noise_by_myseed(self, myseed : int, parameters : pd.Series = pd.Series(dtype='float64'), Temp : int=4.2)-> bool:
+        res = get_switch_timing(self.conf, self.__data_sim_with_noise_by_myseed(parameters, Temp, myseed), plot=True)
+        return compare_switch_timings(res, self.base_switch_timing, self.conf)
+
+    def __only_operation_judge_with_noise_by_myseed(self, myseed : int, parameters : pd.Series = pd.Series(dtype='float64'), Temp : int=4.2)-> bool:
+        res = get_switch_timing(self.conf, self.__data_sim_with_noise_by_myseed(parameters, Temp, myseed), plot=False)
+        return compare_switch_timings(res, self.base_switch_timing, self.conf)
+
+    def only_operation_judge_with_noise_by_myseeds(self, myseeds : list, parameters : pd.Series = pd.Series(dtype='float64'), Temp : int=4.2)-> list:
+        for imyseed in myseeds:
+            result = self.__data_sim_with_noise_by_myseed(parameters, Temp, imyseed['num'])
+            res = get_switch_timing(self.conf, result, plot=False)
+            if self.conf.dc_judge:
+                dc_res=get_dc_edge_timing(self.conf, result)
+                judge_result = compare_switch_timings_with_dc_judge(res, self.base_switch_timing, dc_res, self.base_dc_switch_timing, self.conf)
+            else:
+                judge_result = compare_switch_timings(res, self.base_switch_timing, self.conf)
+            imyseed['result']=judge_result
+        return myseeds
+
+    # myseeds is a list of dict
+    def only_operation_judge_with_noise_by_myseed_async(self, myseedss : list, parameters : pd.Series = pd.Series(dtype='float64'), Temp : int=4.2)-> list:
+
+        # def check(num):
+        #     print(num)
+        #     return num
+
+        if self.base_switch_timing == None:
+            print("\033[31mFirst, you must get the base switch timing.\nPlease use 'get_base_switch_timing()' method before getting the margin.\033[0m")
+            sys.exit()
+
+        param = copy.deepcopy(parameters)
+
+        print("Temp="+str(Temp))
+
+        # tqdmで経過が知りたい時
+        new_myseeds=[]
+        with tqdm(total=len(myseedss)) as progress:
+            futures = []
+            with concurrent.futures.ProcessPoolExecutor(max_workers=32) as executor:
+                
+                for imyseeds in myseedss:
+                    future = executor.submit(self.only_operation_judge_with_noise_by_myseeds, imyseeds, param, Temp)
+                    #future = executor.submit(check, imyseed['num'])
+                    future.add_done_callback(lambda p: progress.update()) # tqdmで経過が知りたい時
+                    futures.append(future)
+                    #result=future.result()
+            
+            for ifu in futures:
+                result=ifu.result()
+                if new_myseeds==[]:
+                    new_myseeds=result
+                else:
+                    new_myseeds.extend(result)
+                # #for future in tqdm(concurrent.futures.as_completed(futures), total=len(futures)):
+                # temp_d=dict()
+                # result=future.result()
+                # #print(result)
+                # temp_d['num']=imyseeds['num']
+                # temp_d['result']=result
+                # new_myseeds.append(temp_d)
+                # #imyseed['result']=result
+    
+        return new_myseeds
 
     def only_operation_judge_with_noise_details(self, parameters : pd.Series = pd.Series(dtype='float64'), Temp : int=4.2)-> str:
         res = get_switch_timing(self.conf, self.__data_sim_with_noise(parameters, Temp))
         return compare_switch_timings_detials(res, self.base_switch_timing, self.conf)
 
     def __operation_judge(self, parameters : pd.Series):
-        res = get_switch_timing(self.conf, self.__data_sim(parameters))
+        result = self.__data_sim(parameters)
+        res = get_switch_timing(self.conf, result)
+        if self.conf.dc_judge:
+            dc_res=get_dc_edge_timing(self.conf, result)
+            return compare_switch_timings_with_dc_judge(res, self.base_switch_timing, dc_res, self.base_dc_switch_timing, self.conf)
         return compare_switch_timings(res, self.base_switch_timing, self.conf)
 
     def __operation_judge_2(self, parameters : pd.Series, num : int):

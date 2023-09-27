@@ -1,6 +1,7 @@
 import pandas as pd
 import math
 import numpy as np
+from scipy import signal
 import re
 from .config import Config
 import matplotlib.pyplot as plt
@@ -47,29 +48,103 @@ def get_switch_timing(config : Config, data : pd.DataFrame, plot = False, timesc
                     res_df.append({'time':srs.index[i], 'phase':flag, 'element':column_name})
                     # res_df = pd.concat([res_df, pd.DataFrame([{'time':srs.index[i], 'phase':flag, 'element':column_name}])], ignore_index=True)
 
-    if not config.voltage_ele == []:
-        for vol in config.voltage_ele:
-            srs_std = data['V('+vol+')'].rolling(window=10).std()
-            srs_std_max = srs_std.rolling(window=10).max()
-            srs_std.plot()
-            basis = srs_std_max.mean()/2
-            reap = False
-            tmp = 0
-            flag = 1
-            for i in range(len(srs_std_max)-1):
-                if not reap:
-                    if srs_std_max.iat[i] < basis and basis < srs_std_max.iat[i+1]:
-                        srs_std_max.iat[i] = basis *2
-                        tmp = srs_std_max.index[i]
-                        reap = True
-                else:
-                    if srs_std_max.iat[i] > basis and basis > srs_std_max.iat[i+1]:
-                        srs_std_max.iat[i] = - basis * 2
-                        if srs_std_max.index[i] - tmp > config.pulse_interval/2:
-                            res_df = pd.concat([res_df, pd.DataFrame([{'time':tmp, 'phase':flag, 'element':'V('+vol+')'}])], ignore_index=True)
-                            res_df = pd.concat([res_df, pd.DataFrame([{'time':srs_std_max.index[i], 'phase':-flag, 'element':'V('+vol+')'}])], ignore_index=True)
-                            flag = flag + 1
-                        reap = False
+    if config.allow_multi_swithes:
+        if not config.voltage_ele == []:
+            for vol in config.voltage_ele:
+                srs_std = data['V('+vol+')'].rolling(window=10).std()
+                srs_std_max = srs_std.rolling(window=10).max()
+                srs_std.plot()
+                basis = srs_std_max.mean()/2
+                reap = False
+                tmp = 0
+                flag = 1
+                for i in range(len(srs_std_max)-1):
+                    if not reap:
+                        if srs_std_max.iat[i] < basis and basis < srs_std_max.iat[i+1]:
+                            srs_std_max.iat[i] = basis *2
+                            tmp = srs_std_max.index[i]
+                            reap = True
+                    else:
+                        if srs_std_max.iat[i] > basis and basis > srs_std_max.iat[i+1]:
+                            srs_std_max.iat[i] = - basis * 2
+                            if srs_std_max.index[i] - tmp > config.pulse_interval/2:
+                                res_df = pd.concat([res_df, pd.DataFrame([{'time':tmp, 'phase':flag, 'element':'V('+vol+')'}])], ignore_index=True)
+                                res_df = pd.concat([res_df, pd.DataFrame([{'time':srs_std_max.index[i], 'phase':-flag, 'element':'V('+vol+')'}])], ignore_index=True)
+                                flag = flag + 1
+                            reap = False
+
+    return res_df
+
+
+def get_dc_edge_timing(config : Config, data : pd.DataFrame, plot = False, timescale = "ps", blackstyle = False)-> pd.DataFrame:
+
+    res_df = []
+
+    if not config.voltage_threshold == []:
+        new_df = pd.DataFrame()
+        for resister in config.voltage_threshold:
+            new_df['V('+resister["element"].upper()+')']=data['V('+resister["element"].upper()+')']
+    
+        if plot:
+            sim_plot(new_df, timescale, blackstyle)
+
+        for column_name, srs in new_df.items():
+            # クロックが入ってからのものを抽出
+            #print(column_name)
+            srs = srs[srs.index > config.end_time]
+            #区間平均を取得
+            # interval_means=(srs.rolling(window=(int((config.pulse_delay/config.trans_interval)/10)))).mean()
+
+            # # ローパスフィルターのカットオフ周波数を設定（例: 4）
+            # cutoff_frequency = int((config.pulse_delay/config.trans_interval)/10)
+            # # フィルターオーダーを設定
+            # filter_order = 4
+            # # ローパスフィルターの伝達関数を計算
+            # b, a = signal.butter(filter_order, cutoff_frequency, btype='low', analog=False, output='ba')
+            # # フィルターを適用
+            # filtered_data = signal.lfilter(b, a, data)
+            # # 結果をPandas Seriesに変換
+            # filtered_series = pd.Series(filtered_data)
+
+            #configからthresholdを取得
+            threshold=None
+            thresholds = config.voltage_threshold
+            for il in thresholds:
+                if ('V('+il["element"].upper()+')')==column_name.upper():
+                    threshold=il['threshold']
+
+            pre_flag=False
+            flag=False
+            #pre_time=0
+            now_time=0
+            count=0
+            # print(srs)
+            # print(interval_means)
+            #srs.to_csv("./noise_test.csv")
+            for i in range(len(srs)-1):
+                # print(interval_means[i])
+                #if not math.isnan(float(interval_means.iat[i])):
+                #立ち上がりと立ち下りのタイミングを取得
+                if (flag==True and pre_flag==False) or (flag==False and pre_flag==True):
+                    #print("x")
+                    #スイッチングが速すぎるものは無視
+                    # print(srs.index[i])
+                    # print(pre_time)
+                    # print(srs.index[i]-pre_time)
+                    # print(config.pulse_delay/10.0)
+                    if not((abs(srs.index[i]-now_time))<(config.dc_delay)):
+                        #print("y")
+                        #pre_time=now_time
+                        now_time=srs.index[i]
+                        count+=1
+                        res_df.append({'time':srs.index[i], 'count':count, 'element':column_name})
+                
+                if srs.iat[i]>threshold:
+                    pre_flag=flag
+                    flag=True
+                elif srs.iat[i]<=threshold:
+                    pre_flag=flag
+                    flag=False
 
     return res_df
 
@@ -88,10 +163,68 @@ def compare_switch_timings(dl1 : list, dl2 : list, config : Config) -> bool:
             l2_time = get_dict(dl2, l1['phase'], l1['element'])
             l1_time = l1['time']
             if l2_time < l1_time - config.pulse_delay or l1_time + config.pulse_delay < l2_time:
+                #print("delay error")
                 return False
         return True
     else:
+        # print(dl1)
+        # print(dl2)
+        # print(len(dl1))
+        # print(len(dl2))
+        # print("num_error")
         return False
+
+def compare_switch_timings_with_dc_judge(dl1 : list, dl2 : list, dcdl1 : list, dcdl2 : list, config : Config) -> bool:
+
+    def get_dict(dict_list : list, phase : int, element : str) -> float:
+        for l in dict_list:
+            if l['phase'] == phase and l['element'] == element:
+                return l['time']
+        return 0
+    
+    def get_dc_dict(dict_list : list, phase : int, element : str) -> float:
+        for l in dict_list:
+            if l['count'] == phase and l['element'] == element:
+                return l['time']
+        return 0
+    
+    # print(dcdl1)
+    # print(dcdl2)
+    #DC judgement
+    dc_result_flag=True
+    if len(dcdl1) == len(dcdl2):
+        for l1 in dcdl1:
+            l2_time = get_dc_dict(dcdl2, l1['count'], l1['element'])
+            l1_time = l1['time']
+            if l2_time < l1_time - config.pulse_delay or l1_time + config.pulse_delay < l2_time:
+                #print("delay error")
+                #return (False and dc_result_flag)
+                dc_result_flag=False
+                # print("timing false")
+        #return (True and dc_result_flag)
+    else:
+        # print("num false")
+        # print("num="+str(len(dcdl1)))
+        # print("num="+str(len(dcdl2)))
+        dc_result_flag=False
+
+    # Number of switches is different
+    if len(dl1) == len(dl2):
+        for l1 in dl1:
+            l2_time = get_dict(dl2, l1['phase'], l1['element'])
+            l1_time = l1['time']
+            if l2_time < l1_time - config.pulse_delay or l1_time + config.pulse_delay < l2_time:
+                #print("delay error")
+                return (False and dc_result_flag)
+        return (True and dc_result_flag)
+    else:
+        # print(dl1)
+        # print(dl2)
+        # print(len(dl1))
+        # print(len(dl2))
+        # print("num_error")
+        return (False and dc_result_flag)
+
 
 def compare_switch_timings_detials(dl1 : list, dl2 : list, config : Config) -> str:
 
